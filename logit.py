@@ -1,86 +1,87 @@
-# LOG DIRECTIVES
-  # %L = Log Level
-  # %N = Module
-  # %F = Function
-  # %P = Parameters
-  # %O = Output string
-
+import sys, traceback
+from enum import Enum
 from datetime import datetime
+from functools import wraps
 
 
 class LogIt():
-    def __init__(self, str_format=""):
-        self._queue = None
-        self._format = str_format if str_format else "%Y%m%d %H:%M:%S %L %N %F %P %O"
-        self._dt_directives=['%a','%A','%b','%B','%c','%C','%d','%D','%e','%g','%G','%h', 
-                       '%H','%I','%j','%m','%M','%n','%p','%r','%R', '%S','%t','%T','%u', 
-                       '%U','%W','%w','%x','%X','%y','%Y','%Z','%z','%%']
-        self._log_directives = ['%L','%N','%F','%P','%O']
+    def __init__(self):
+        self._filename = None
+        self._level = None
+        self._format = None
+        self._dt_format = None
+        self._func_name = None
+        self._func_module = None
+        self._func_args = None
+
+    def config(self, filename=None, level=None, format=None, dt_fmt=None):
+        self._filename = filename
+        self._level = level
+        self._format = format
+        self._dt_format = dt_fmt
+
+    def __call__(self, fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            self._func_name = fn.__name__
+            self._func_module = fn.__module__
+            self._func_args = args
+            result = fn(*args, **kwargs)
+            return result
+        return wrapper
 
     def _write(self, log_level, message):
-        dt = datetime.now().strftime(self._get_dt_str())
+        dt = datetime.now().strftime(self._dt_format)
         print(dt)
+    
+    def _check_config(self):
+        if self._filename is not None:
+            return True
+        return False
 
-
-    def _get_dt_str(self):
-        fmt_str_list = list(self._format)
-
-        directive = {}
-        for i in range(len(fmt_str_list)):
-            if self._format[i:i+1] == "%":
-                if self._format[i:i] != "%":
-                    for d in self._dt_directives:
-                        if self._format[i:i+2] == d:
-                            directive.update({self._format[i:i+2]: i})
-
-        dt_fmt = ""
-        for key, val in directive.items():
-            if key == "%H":
-                dt_fmt += " " + key
-            elif key == "%M":
-                dt_fmt += ":" + key
-            elif key == "%S":
-                dt_fmt += ":" + key
-            else:
-                dt_fmt += key
-
-        return dt_fmt
-
-
-    def console():
-        print("Logging to the console")
-
-
-    def info(self, message):
-        self._write("INFO", message)
-
-
-    def warning(self, message):
-        self._write("WARN", message)
-
-
-    def error(self, message):
-        self._write("ERROR", message)
-
-
-    def fatal(self, message):
-        self._write("FATAL", message)
-
+    def _console(self, message):
+        print(message)
 
     def debug(self, message):
-        self._write("DEBUG", message)
+        self._write(Level.Debug, message)
 
+    def info(self, message):
+        if self._check_config():
+            self._write(Level.Info, message)
+        else:
+            self._console(message)
 
-def trace(func):
-    def inner1(*args, **kwargs):
-        msg = "Func: {0}  Module: {1}  Args: {2}".format(
-            func.__name__,
-            func.__module__,
-            args)
+    def warning(self, message):
+        if self._check_config():
+            self._write(Level.Warn, message)
+        else:
+            self._console(message)
 
-        print(msg)
+    def error(self, message):
+        if self._check_config():
+            self._write(Level.Error, message)
+        else:
+            self._console(message)
 
-        #console_log(msg, log_level=LogLevel.Log_Level_Debug.value)
+    def fatal(self, message):
+        if self._check_config():
+            self._write(Level.Fatal, message)
+        else:
+            self._console(message)
 
-        func(*args, **kwargs)
-    return inner1
+    def exception(self, message):
+        if self._check_config():
+            self._write(Level.Fatal, message)
+        else:
+            self._console(message)
+
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        traceback.print_exception(exc_type, exc_value, exc_traceback,
+                              limit=2, file=self._filename)
+
+class Level(Enum):
+    Debug = 0,
+    Info = 1,
+    Warn = 2,
+    Error = 3,
+    Fatal = 4
