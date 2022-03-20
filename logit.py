@@ -1,8 +1,9 @@
 import sys, traceback
+from threading import Thread
 from enum import Enum
 from datetime import datetime
 from functools import wraps
-
+from queue import Queue
 
 class LogIt():
     def __init__(self):
@@ -13,6 +14,10 @@ class LogIt():
         self._func_name = None
         self._func_module = None
         self._func_args = None
+        self._queue = Queue()
+        self._file_handler = open(self._filename, 'a')
+        self._finished = False
+        Thread(name="Writer", target=self._worker).start()
 
     def config(self, filename=None, level=None, format=None, dt_fmt=None):
         self._filename = filename
@@ -30,50 +35,52 @@ class LogIt():
             return result
         return wrapper
 
+    def worker(self):
+        # TODO: Refactor this code....
+        while not self._finished:
+            try:
+                data = self._queue.get(True, 1)
+            except Queue.Empty:
+                continue
+
+            self._file_handler.write(data)
+            self._queue.task_done()
+
+    def flush(self):
+        self._queue.join()
+        self._finished = True
+        self._file_handler.close()
+
     def _write(self, log_level, message):
         dt = datetime.now().strftime(self._dt_format)
-        print(dt)
+        self._queue.put(dt)
     
-    def _check_config(self):
+    def _check_config(self, level, message):
         if self._filename is not None:
-            return True
-        return False
+            self._write(level, message)
+        else:
+            self._console(level, message)
 
-    def _console(self, message):
-        print(message)
+    def _console(self, level, message):
+        print("{0}: {1}".format(level, message))
 
     def debug(self, message):
         self._write(Level.Debug, message)
 
     def info(self, message):
-        if self._check_config():
-            self._write(Level.Info, message)
-        else:
-            self._console(message)
+        self._check_config(Level.Info, message)
 
     def warning(self, message):
-        if self._check_config():
-            self._write(Level.Warn, message)
-        else:
-            self._console(message)
+        self._check_config(Level.Warn, message)
 
     def error(self, message):
-        if self._check_config():
-            self._write(Level.Error, message)
-        else:
-            self._console(message)
+        self._check_config(Level.Error, message)
 
     def fatal(self, message):
-        if self._check_config():
-            self._write(Level.Fatal, message)
-        else:
-            self._console(message)
+        self._check_config(Level.Fatal, message)
 
     def exception(self, message):
-        if self._check_config():
-            self._write(Level.Fatal, message)
-        else:
-            self._console(message)
+        self._check_config(Level.Fatal, message)
 
         exc_type, exc_value, exc_traceback = sys.exc_info()
         traceback.print_exception(exc_type, exc_value, exc_traceback,
